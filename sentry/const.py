@@ -50,6 +50,7 @@ ODOO_USER_EXCEPTIONS = [
     "odoo.exceptions.except_orm",
 ]
 DEFAULT_IGNORED_EXCEPTIONS = ",".join(ODOO_USER_EXCEPTIONS)
+DEFAULT_IGNORED_CRON_EXCEPTIONS = ""
 
 EXCLUDE_LOGGERS = ("werkzeug",)
 DEFAULT_EXCLUDE_LOGGERS = ",".join(EXCLUDE_LOGGERS)
@@ -107,6 +108,9 @@ def get_sentry_options():
         SentryOption("http_proxy", DEFAULT_OPTIONS["http_proxy"], None),
         SentryOption("https_proxy", DEFAULT_OPTIONS["https_proxy"], None),
         SentryOption("ignore_exceptions", DEFAULT_IGNORED_EXCEPTIONS, split_multiple),
+        SentryOption(
+            "ignore_cron_exceptions", DEFAULT_IGNORED_CRON_EXCEPTIONS, split_multiple
+        ),
         SentryOption("request_bodies", DEFAULT_OPTIONS["request_bodies"], None),
         SentryOption("attach_stacktrace", DEFAULT_OPTIONS["attach_stacktrace"], None),
         SentryOption("ca_certs", DEFAULT_OPTIONS["ca_certs"], None),

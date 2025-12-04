@@ -29,6 +29,12 @@ configuration file:
                                                                                                      odoo.exceptions.Warning,
                                                                                                      odoo.exceptions.except_orm``
 
+``sentry_ignore_cron_exceptions``  A string of comma-separated exceptions which should be ignored     ``''``
+                                   only when raised during cron job execution. This setting is
+                                   independent from ``sentry_ignored_exceptions`` - when a cron job
+                                   is running, only this list is used (not the regular ignored
+                                   exceptions list).
+
 ``sentry_include_context``     If enabled, additional context data will be extracted from current    ``True``
                                HTTP request and user session (if available). This has no effect
                                for Cron jobs, as no request/session is available inside a Cron job.
@@ -70,6 +76,7 @@ Below is an example of Odoo configuration file with *Odoo Sentry* options::
         odoo.exceptions.RedirectWarning,odoo.exceptions.UserError,
         odoo.exceptions.ValidationError,odoo.exceptions.Warning,
         odoo.exceptions.except_orm
+    sentry_ignore_cron_exceptions = odoo.exceptions.UserError,odoo.exceptions.ValidationError
     sentry_include_context = true
     sentry_environment = production
     sentry_release = 1.3.2

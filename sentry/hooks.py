@@ -2,6 +2,7 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 import logging
+import threading
 import warnings
 from collections import abc
 
@@ -32,6 +33,64 @@ except ImportError:  # pragma: no cover
     )  # pragma: no cover
 
 
+def _get_exception_qualified_name(hint):
+    """Extract the qualified exception name from the hint.
+
+    Returns the fully qualified name (module.ClassName) or None if not found.
+    """
+    exc_info = hint.get("exc_info")
+
+    # Case 1: Exception captured with exc_info (e.g., cron jobs)
+    if exc_info is not None:
+        exc_type = exc_info[0]
+        if exc_type is not None:
+            return exc_type.__module__ + "." + exc_type.__name__
+
+    # Case 2: Exception captured via log_record (e.g., HTTP requests)
+    if "log_record" in hint:
+        try:
+            msg = hint["log_record"].msg
+            return msg.__module__ + "." + msg.__class__.__name__
+        except AttributeError:
+            pass
+
+    return None
+
+
+def _should_ignore_exception(qualified_name, event):
+    """Determine if an exception should be ignored based on context.
+
+    For cron threads: uses sentry_ignore_cron_exceptions list
+    For other contexts: uses sentry_ignore_exceptions list
+
+    Returns True if the exception should be ignored (not sent to Sentry).
+    """
+    if not qualified_name:
+        return False
+
+    current_thread_name = threading.current_thread().name
+
+    if current_thread_name.startswith("odoo.service.cron."):
+        # Use cron-specific exception list
+        ignore_cron_exceptions_tag = event.get("tags", {}).get(
+            "ignore_cron_exceptions", ""
+        )
+        if ignore_cron_exceptions_tag:
+            ignore_cron_exceptions = [
+                exc.strip()
+                for exc in ignore_cron_exceptions_tag.split(",")
+                if exc.strip()
+            ]
+            if qualified_name in ignore_cron_exceptions:
+                return True
+    else:
+        # Use regular exception list for non-cron execution
+        if qualified_name in const.DEFAULT_IGNORED_EXCEPTIONS:
+            return True
+
+    return False
+
+
 def before_send(event, hint):
     """Prevent the capture of any exceptions in
     the DEFAULT_IGNORED_EXCEPTIONS list
@@ -39,19 +98,10 @@ def before_send(event, hint):
     Add context to event if include_context is True
     and sanitize sensitive data"""
 
-    exc_info = hint.get("exc_info")
-    if exc_info is None and "log_record" in hint:
-        # Odoo handles UserErrors by logging the raw exception rather
-        # than a message string in odoo/http.py
-        try:
-            module_name = hint["log_record"].msg.__module__
-            class_name = hint["log_record"].msg.__class__.__name__
-            qualified_name = module_name + "." + class_name
-        except AttributeError:
-            qualified_name = "not found"
-
-        if qualified_name in const.DEFAULT_IGNORED_EXCEPTIONS:
-            return None
+    # Check if the exception should be ignored
+    qualified_name = _get_exception_qualified_name(hint)
+    if _should_ignore_exception(qualified_name, event):
+        return None
 
     if event.setdefault("tags", {})["include_context"]:
         cxtest = get_extra_context(odoo.http.request)
@@ -127,9 +177,14 @@ def initialize_sentry(config):
     # Remove logging_level, since in sentry_sdk is include in 'integrations'
     del options["logging_level"]
 
+    # Store ignore_cron_exceptions separately since we need it in before_send
+    ignore_cron_exceptions = options.get("ignore_cron_exceptions", [])
+    del options["ignore_cron_exceptions"]
+
     client = sentry_sdk.init(**options)
 
     sentry_sdk.set_tag("include_context", config.get("sentry_include_context", True))
+    sentry_sdk.set_tag("ignore_cron_exceptions", ",".join(ignore_cron_exceptions))
 
     if exclude_loggers:
         for item in exclude_loggers:
